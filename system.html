@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #f0f2f5;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: auto;
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 
+                0 4px 6px -1px rgba(0, 0, 0, 0.1),
+                0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        h2 {
+            color: #2c3e50;
+            font-size: 1.8rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #4a5568;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 0.75rem;
+            border: none;
+            width: 100%;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(76, 175, 80, 0.2);
+        }
+
+        button:hover {
+            background: #45a049;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(76, 175, 80, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(76, 175, 80, 0.2);
+        }
+
+        .existing-score {
+            font-size: 0.9rem;
+            color: red;  /* Change to red */
+            margin-top: 0.25rem;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            font-size: 1.5rem;
+            color: #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Online School Base Assessment</h2>
+        <form id="scoreForm">
+            <div class="form-group">
+                <label>Class</label>
+                <select id="className">
+                    <option value="">Select Class</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Subject</label>
+                <select id="subjectName">
+                    <option value="">Select Subject</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Student Name</label>
+                <select id="studentName">
+                    <option value="">Select Student</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Test 1 (15)</label>
+                <input type="number" id="test1" max="15" min="0">
+                <div id="test1-existing" class="existing-score"></div>
+            </div>
+            <div class="form-group">
+                <label>Group Work (15)</label>
+                <input type="number" id="groupWork" max="15" min="0">
+                <div id="groupWork-existing" class="existing-score"></div>
+            </div>
+            <div class="form-group">
+                <label>Test 2 (15)</label>
+                <input type="number" id="test2" max="15" min="0">
+                <div id="test2-existing" class="existing-score"></div>
+            </div>
+            <div class="form-group">
+                <label>Project Work (15)</label>
+                <input type="number" id="projectWork" max="15" min="0">
+                <div id="projectWork-existing" class="existing-score"></div>
+            </div>
+            <div class="form-group">
+                <label>Exam</label>
+                <input type="number" id="exam" min="0">
+                <div id="exam-existing" class="existing-score"></div>
+            </div>
+            <button type="submit">Submit Scores</button>
+        </form>
+
+        <div class="loading" id="loadingIndicator">Loading...</div>
+    </div>
+
+    <script>
+        let studentCache = {};  // Cache to store student data for class-subject
+
+        // Fetch classes
+        google.script.run.withSuccessHandler(function(classes) {
+            const select = document.getElementById('className');
+            classes.forEach(className => {
+                const option = document.createElement('option');
+                option.value = option.text = className;
+                select.add(option);
+            });
+        }).getClasses();
+
+        // Class change event
+        document.getElementById('className').addEventListener('change', function() {
+            const className = this.value;
+            if (className) {
+                google.script.run.withSuccessHandler(function(subjects) {
+                    const subjectSelect = document.getElementById('subjectName');
+                    subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+                    subjects.forEach(subject => {
+                        const option = document.createElement('option');
+                        option.value = option.text = subject;
+                        subjectSelect.add(option);
+                    });
+                }).getSubjectsForClass(className);
+            }
+        });
+
+        // Subject change event
+        document.getElementById('subjectName').addEventListener('change', function() {
+            const className = document.getElementById('className').value;
+            const subjectName = this.value;
+            const studentSelect = document.getElementById('studentName');
+            if (className && subjectName) {
+                showLoading(true);  // Show loading indicator
+
+                // Check cache first
+                if (studentCache[className] && studentCache[className][subjectName]) {
+                    populateStudents(studentCache[className][subjectName]);
+                    showLoading(false);  // Hide loading indicator
+                } else {
+                    google.script.run.withSuccessHandler(function(students) {
+                        // Cache the students list
+                        studentCache[className] = studentCache[className] || {};
+                        studentCache[className][subjectName] = students;
+
+                        populateStudents(students);
+                        showLoading(false);  // Hide loading indicator
+                    }).getStudentsForClassAndSubject(className, subjectName);
+                }
+            }
+        });
+
+        // Populate student dropdown
+        function populateStudents(students) {
+            const studentSelect = document.getElementById('studentName');
+            studentSelect.innerHTML = '<option value="">Select Student</option>';
+            students.forEach(student => {
+                const option = document.createElement('option');
+                option.value = option.text = student;
+                studentSelect.add(option);
+            });
+        }
+
+        // Show or hide loading indicator
+        function showLoading(isLoading) {
+            document.getElementById('loadingIndicator').style.display = isLoading ? 'block' : 'none';
+        }
+
+        // Student change event to show existing scores immediately
+        document.getElementById('studentName').addEventListener('change', function() {
+            const className = document.getElementById('className').value;
+            const subjectName = document.getElementById('subjectName').value;
+            const studentName = this.value;
+            if (className && subjectName && studentName) {
+                google.script.run.withSuccessHandler(function(scores) {
+                    // Show scores immediately when student is selected
+                    if (scores) {
+                        document.getElementById('test1-existing').textContent = scores.test1 ? `Existing score: ${scores.test1}` : '';
+                        document.getElementById('groupWork-existing').textContent = scores.groupWork ? `Existing score: ${scores.groupWork}` : '';
+                        document.getElementById('test2-existing').textContent = scores.test2 ? `Existing score: ${scores.test2}` : '';
+                        document.getElementById('projectWork-existing').textContent = scores.projectWork ? `Existing score: ${scores.projectWork}` : '';
+                        document.getElementById('exam-existing').textContent = scores.exam ? `Existing score: ${scores.exam}` : '';
+                    }
+                }).getExistingScores(className, studentName, subjectName);
+            }
+        });
+
+        // Form submission
+        document.getElementById('scoreForm').onsubmit = function(e) {
+            e.preventDefault();
+            const formData = {
+                className: document.getElementById('className').value,
+                subjectName: document.getElementById('subjectName').value,
+                studentName: document.getElementById('studentName').value,
+                test1: document.getElementById('test1').value,
+                groupWork: document.getElementById('groupWork').value,
+                test2: document.getElementById('test2').value,
+                projectWork: document.getElementById('projectWork').value,
+                exam: document.getElementById('exam').value
+            };
+
+            if (!formData.studentName || !formData.subjectName || !formData.className) {
+                alert('Please select class, subject, and student');
+                return;
+            }
+
+            google.script.run
+                .withSuccessHandler(function(result) {
+                    alert(result);
+                    if (result === 'Success') {
+                        // Reset scores fields but retain class, subject, and student
+                        document.getElementById('test1').value = '';
+                        document.getElementById('groupWork').value = '';
+                        document.getElementById('test2').value = '';
+                        document.getElementById('projectWork').value = '';
+                        document.getElementById('exam').value = '';
+
+                        // Clear existing score displays
+                        document.querySelectorAll('.existing-score').forEach(el => el.textContent = '');
+                        
+                        // After submission, fetch and show existing scores for selected student
+                        document.getElementById('studentName').dispatchEvent(new Event('change'));
+                    }
+                })
+                .withFailureHandler(function(error) {
+                    alert('Error: ' + error);
+                })
+                .submitScores(formData);
+        };
+    </script>
+</body>
+</html>
